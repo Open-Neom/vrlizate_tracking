@@ -1,0 +1,51 @@
+name: vrlizate_tracking
+description: Multi-camera 6DoF optical fiducial PnP tracking, Estación Faro 3-device spatial fusion (PC + Visor + Joystick), passthrough HUDs, and device profiling for VRlizate SDK.
+version: 1.0.0
+homepage: https://github.com/Open-Neom/vrlizate_tracking
+repository: https://github.com/Open-Neom/vrlizate_tracking
+issue_tracker: https://github.com/Open-Neom/vrlizate_tracking/issues
+topics:
+  - vr
+  - virtual-reality
+  - computer-vision
+  - tracking
+  - 6dof
+
+platforms:
+  android:
+  ios:
+  macos:
+  windows:
+  linux:
+
+environment:
+  sdk: ^3.10.8
+  flutter: '>=3.47.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.12.1
+  crypto: ^3.0.7
+  file_picker: ^11.0.2
+  http: ^1.6.0
+  permission_handler: ^12.0.0+1
+  qr_flutter: ^4.1.0
+  shared_preferences: ^2.5.5
+  vector_math: ^2.1.4
+  vrlizate: ^1.13.0
+  vrlizate_apps: ^1.0.0
+  vrlizate_assistant: ^1.0.0
+  vrlizate_avatar: ^1.0.0
+  vrlizate_cast: ^1.0.0
+  vrlizate_joystick: ^1.0.0
+  vrlizate_scene: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  camera_platform_interface: ^2.10.0
+  fake_async: ^1.3.3
+
+flutter:
