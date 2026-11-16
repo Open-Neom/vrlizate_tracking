@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vrlizate/vrlizate.dart' show VrDirectDeviceBridge;
 import 'package:vrlizate_scene/vrlizate_scene.dart';
 
 export 'package:vrlizate_scene/vrlizate_scene.dart'
@@ -33,9 +34,32 @@ class VrDeviceProfiler {
   /// Does not select a display mode or load/overwrite a user's saved preset.
   static Future<void> initialize() => _initialization ??= _readCapabilities();
 
-  /// Reads current Android thermal severity without falling back to a cached
+  static bool get _isDirectNativeHostMatch {
+    if (kIsWeb) return false;
+    final direct = VrDirectDeviceBridge.instance;
+    if (!direct.isAvailable) return false;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => direct.androidOpenXrHandlesSync() != null,
+      TargetPlatform.iOS || TargetPlatform.macOS => true,
+      _ => false,
+    };
+  }
+
+  /// Synchronously reads OS thermal severity (`0..6`) via Direct Native Interop
+  /// (`NSProcessInfo.thermalState` on iOS/macOS, `PowerManager.getCurrentThermalStatus`
+  /// via JNI on Android) with zero `MethodChannel` round-trips, or `null` when
+  /// unavailable.
+  static int? readThermalStatusSync() {
+    if (!_isDirectNativeHostMatch) return null;
+    final status = VrDirectDeviceBridge.instance.readThermalStatusSync();
+    return status != null && status >= 0 && status <= 6 ? status : null;
+  }
+
+  /// Reads current OS thermal severity without falling back to a cached
   /// device snapshot. An unavailable reading is represented by null.
   static Future<int?> readThermalStatus() async {
+    final directStatus = readThermalStatusSync();
+    if (directStatus != null) return directStatus;
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
     try {
       final response = await _channel
@@ -55,11 +79,20 @@ class VrDeviceProfiler {
   /// Refreshes live Wi-Fi band, audio route, display mode, and thermal state
   /// without resetting the startup quality profile.
   static Future<VrDeviceCapabilities?> refreshRuntimeEnvironment() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return _capabilities;
-    }
+    if (kIsWeb) return _capabilities;
     final current = _capabilities;
     if (current == null) return null;
+    if (_isDirectNativeHostMatch) {
+      final direct = VrDirectDeviceBridge.instance.readDeviceCapabilitiesSync();
+      if (direct != null) {
+        _capabilities = current.copyWithRuntimeEnvironment(direct);
+        _featureProfile = VrPopularDeviceCatalog.resolve(_capabilities);
+        return _capabilities;
+      }
+    }
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return _capabilities;
+    }
     try {
       final response = await _channel
           .invokeMethod<Object?>('readRuntimeEnvironment')
@@ -73,12 +106,22 @@ class VrDeviceProfiler {
   }
 
   static Future<void> _readCapabilities() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (kIsWeb) return;
+    final supportsDirect = _isDirectNativeHostMatch;
+    if (!supportsDirect && defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
     var status = 'unavailable';
     try {
-      final response = await _channel
-          .invokeMethod<Object?>('read')
-          .timeout(const Duration(seconds: 2));
+      Object? response;
+      if (supportsDirect) {
+        response = VrDirectDeviceBridge.instance.readDeviceCapabilitiesSync();
+      }
+      if (response == null && defaultTargetPlatform == TargetPlatform.android) {
+        response = await _channel
+            .invokeMethod<Object?>('read')
+            .timeout(const Duration(seconds: 2));
+      }
       _capabilities = VrDeviceCapabilities.fromPlatform(response);
       final device = _capabilities;
       if (device != null) {
