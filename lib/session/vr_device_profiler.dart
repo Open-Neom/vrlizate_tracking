@@ -112,10 +112,41 @@ class VrDeviceProfiler {
       return;
     }
     var status = 'unavailable';
+    double? directCapsUs;
+    double? directThermalUs;
+    double? channelThermalUs;
     try {
       Object? response;
       if (supportsDirect) {
+        final swDirectCaps = Stopwatch()..start();
         response = VrDirectDeviceBridge.instance.readDeviceCapabilitiesSync();
+        swDirectCaps.stop();
+        directCapsUs = swDirectCaps.elapsedMicroseconds.toDouble();
+        // Warm 64-iteration micro-probe of direct thermal status vs channel.
+        for (var i = 0; i < 8; i++) {
+          VrDirectDeviceBridge.instance.readThermalStatusSync();
+        }
+        final swDirectThermal = Stopwatch()..start();
+        for (var i = 0; i < 64; i++) {
+          VrDirectDeviceBridge.instance.readThermalStatusSync();
+        }
+        swDirectThermal.stop();
+        directThermalUs = swDirectThermal.elapsedMicroseconds / 64.0;
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          try {
+            await _channel
+                .invokeMethod<Object?>('readRuntimeEnvironment')
+                .timeout(const Duration(milliseconds: 250));
+            final swChan = Stopwatch()..start();
+            for (var i = 0; i < 16; i++) {
+              await _channel
+                  .invokeMethod<Object?>('readRuntimeEnvironment')
+                  .timeout(const Duration(milliseconds: 250));
+            }
+            swChan.stop();
+            channelThermalUs = swChan.elapsedMicroseconds / 16.0;
+          } catch (_) {}
+        }
       }
       if (response == null && defaultTargetPlatform == TargetPlatform.android) {
         response = await _channel
@@ -148,7 +179,7 @@ class VrDeviceProfiler {
       status = 'invalid_response';
     }
     debugPrint(
-      '[VR_DEVICE] ${jsonEncode({'status': status, 'capabilities': _capabilities?.toJson(), 'profile': _profile?.id, 'featureLine': _featureProfile?.popularLineId, 'deviceClass': _featureProfile?.deviceClass.name, 'initialTier': detectInitialPreset().tier.name, 'catalogDisplayMaxHz': _profile?.displayMaxHz, 'measuredFps': null})}',
+      '[VR_DEVICE] ${jsonEncode({'status': status, 'capabilities': _capabilities?.toJson(), 'profile': _profile?.id, 'featureLine': _featureProfile?.popularLineId, 'deviceClass': _featureProfile?.deviceClass.name, 'initialTier': detectInitialPreset().tier.name, 'catalogDisplayMaxHz': _profile?.displayMaxHz, 'directCapsUs': directCapsUs, 'directThermalUs': directThermalUs, 'channelThermalUs': channelThermalUs, 'measuredFps': null})}',
     );
   }
 
