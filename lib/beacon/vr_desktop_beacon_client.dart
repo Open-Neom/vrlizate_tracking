@@ -231,8 +231,43 @@ class VrDesktopBeaconClient extends ChangeNotifier {
   Uri? get connectedVaultVrlzIndexUri =>
       connectedVaultCatalogUri?.resolve('vrlz-index.json');
 
+  Uri? get connectedVaultAiInferUri =>
+      connectedVaultCatalogUri?.resolve('ai-infer');
+
   Uri? get connectedVaultWebLibraryUri =>
       connectedVaultCatalogUri?.resolve('../web');
+
+  /// Offloads an embedded AI inference request to the paired **Estación Faro**
+  /// computer (`3D` topology) over the authenticated LAN Vault capability URL.
+  Future<Map<String, Object?>?> requestDesktopAiInference(
+    Map<String, Object?> payload, {
+    Duration timeout = const Duration(seconds: 18),
+  }) async {
+    if (_disposed || kIsWeb || !isConnected) return null;
+    final uri = connectedVaultAiInferUri;
+    if (uri == null) return null;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client.postUrl(uri).timeout(const Duration(seconds: 3));
+      req.headers.contentType = ContentType.json;
+      final bodyBytes = utf8.encode(jsonEncode(payload));
+      req.contentLength = bodyBytes.length;
+      req.add(bodyBytes);
+      final res = await req.close().timeout(timeout);
+      final raw = await utf8.decoder
+          .bind(res)
+          .take(128)
+          .join()
+          .timeout(const Duration(seconds: 4), onTimeout: () => '');
+      if (res.statusCode != HttpStatus.ok || raw.trim().isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      return decoded is Map ? Map<String, Object?>.from(decoded) : null;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   bool get isConnected =>
       _sessionKey != null &&

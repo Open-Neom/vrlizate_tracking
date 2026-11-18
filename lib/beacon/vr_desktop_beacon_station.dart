@@ -24,11 +24,18 @@ import 'vr_tri_node_depth_solver.dart';
 /// **Estación Faro** (3rd spatial sensor & AI pose node) that elevates the
 /// tracking quality of a smartphone Visor running `.vrlz` experiences.
 class VrDesktopBeaconStation extends ChangeNotifier {
+  /// Optional host-registered local AI inference handler (e.g. `neom_ollama` /
+  /// `saia_gguf` in Open Neom) used automatically by Desktop Faro stations.
+  static Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
+  defaultAiInferenceHandler;
+
   VrDesktopBeaconStation({
     VrDesktopVisionPlatform? visionPlatform,
     VrDesktopVoicePlatform? voicePlatform,
     VrVoiceIntentRouter? voiceRouter,
     VrDesktopCapabilities? desktopCapabilities,
+    Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
+    aiInferenceHandler,
     this.stationName = 'VRlizate Desktop Faro',
     this.discoveryPort = VrDesktopBeaconWire.defaultDiscoveryPort,
     int? bindPort,
@@ -42,6 +49,7 @@ class VrDesktopBeaconStation extends ChangeNotifier {
        voiceRouter = voiceRouter ?? VrVoiceIntentRouter.createDefault(),
        _desktopCapabilities = desktopCapabilities,
        _hasExplicitCapabilities = desktopCapabilities != null,
+       _aiInferenceHandler = aiInferenceHandler,
        bindPort = bindPort ?? _resolveEnvPort(),
        _clockUs =
            monotonicMicroseconds ??
@@ -57,6 +65,14 @@ class VrDesktopBeaconStation extends ChangeNotifier {
   final VrDesktopVisionPlatform _vision;
   final VrDesktopVoicePlatform _voice;
   final VrVoiceIntentRouter voiceRouter;
+  Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
+  _aiInferenceHandler;
+
+  void setAiInferenceHandler(
+    Future<Map<String, Object?>> Function(Map<String, Object?> payload)? handler,
+  ) {
+    _aiInferenceHandler = handler;
+  }
   final int Function() _clockUs;
   final String stationName;
   final String stationId;
@@ -120,6 +136,13 @@ class VrDesktopBeaconStation extends ChangeNotifier {
         'labelEs': expr.labelEs,
         'actionHintEs': expr.actionHintEs,
       };
+    },
+    onAiInferenceApi: (payload) async {
+      final handler = _aiInferenceHandler ?? defaultAiInferenceHandler;
+      if (handler == null) {
+        return {'ok': false, 'error': 'ai_handler_not_registered'};
+      }
+      return handler(payload);
     },
   );
 
@@ -229,6 +252,8 @@ class VrDesktopBeaconStation extends ChangeNotifier {
   bool get castToDesktopEnabled => autonomousBridge.castToDesktopEnabled;
   bool get preferPcProjectorMode => autonomousBridge.preferPcProjectorMode;
   VrDesktopCapabilities? get desktopCapabilities => _desktopCapabilities;
+  bool get hasAiInferenceHandler =>
+      (_aiInferenceHandler ?? defaultAiInferenceHandler) != null;
   VrTriDeviceExecutionPlan? get latestExecutionPlan =>
       autonomousBridge.latestExecutionPlan;
   int? get boundPort => _dataSocket?.port;

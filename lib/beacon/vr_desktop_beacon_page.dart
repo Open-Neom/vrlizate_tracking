@@ -1346,12 +1346,11 @@ class _VrDesktopBeaconPageState extends State<VrDesktopBeaconPage> {
   Future<void> _pickAndRegisterVaultFile() async {
     if (kIsWeb) return;
     final picked = await FilePicker.pickFiles(
-      allowMultiple: true,
       type: FileType.any,
     );
-    if (picked == null || !mounted) return;
+    if (picked.isEmpty || !mounted) return;
     var count = 0;
-    for (final file in picked.files) {
+    for (final file in picked) {
       final path = file.path;
       if (path == null || path.trim().isEmpty) continue;
       final item = await _station.mediaVault.registerLocalFile(path);

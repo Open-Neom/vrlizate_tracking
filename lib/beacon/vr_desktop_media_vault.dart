@@ -368,6 +368,7 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
     this.onPushToVisor,
     this.onVoiceCommandApi,
     this.onSimulateExpressionApi,
+    this.onAiInferenceApi,
   }) : _vaultToken = _generateCapabilityToken();
 
   final String stationId;
@@ -382,6 +383,8 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
   onVoiceCommandApi;
   final Map<String, Object?> Function(String expressionName)?
   onSimulateExpressionApi;
+  final Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
+  onAiInferenceApi;
 
   HttpServer? _server;
   StreamSubscription<HttpRequest>? _sub;
@@ -1002,6 +1005,66 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
         }
         final result = onSimulateExpressionApi!(expr);
         _sendJson(response, result);
+        return;
+      }
+
+      if (sub.length == 2 &&
+          sub[0] == 'api' &&
+          sub[1] == 'ai-infer' &&
+          request.method == 'POST') {
+        if (onAiInferenceApi == null) {
+          _sendJson(
+            response,
+            {'ok': false, 'error': 'ai_inference_unavailable'},
+            status: HttpStatus.serviceUnavailable,
+          );
+          return;
+        }
+        final rawBody = await utf8.decoder
+            .bind(request)
+            .take(64)
+            .join()
+            .timeout(const Duration(seconds: 3), onTimeout: () => '');
+        if (rawBody.trim().isEmpty || rawBody.length > 32768) {
+          _sendJson(
+            response,
+            {'ok': false, 'error': 'invalid_ai_payload'},
+            status: HttpStatus.badRequest,
+          );
+          return;
+        }
+        Map<String, Object?> payload;
+        try {
+          final decoded = jsonDecode(rawBody);
+          if (decoded is! Map) {
+            _sendJson(
+              response,
+              {'ok': false, 'error': 'expected_json_object'},
+              status: HttpStatus.badRequest,
+            );
+            return;
+          }
+          payload = Map<String, Object?>.from(decoded);
+        } catch (_) {
+          _sendJson(
+            response,
+            {'ok': false, 'error': 'malformed_json'},
+            status: HttpStatus.badRequest,
+          );
+          return;
+        }
+        try {
+          final result = await onAiInferenceApi!(payload).timeout(
+            const Duration(seconds: 25),
+          );
+          _sendJson(response, result);
+        } catch (_) {
+          _sendJson(
+            response,
+            {'ok': false, 'error': 'ai_inference_failed'},
+            status: HttpStatus.internalServerError,
+          );
+        }
         return;
       }
 
