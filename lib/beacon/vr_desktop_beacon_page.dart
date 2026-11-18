@@ -49,11 +49,52 @@ class _VrDesktopBeaconPageState extends State<VrDesktopBeaconPage> {
   final TextEditingController _voiceConsoleController = TextEditingController();
   bool _theaterMode = false;
   bool _showJoystickQr = false;
+  Map<String, Object?>? _aiStatusSnapshot;
+  bool _testingAi = false;
+  String? _aiSelfTestReply;
+
+  Future<void> _refreshAiStatus() async {
+    final snap = await _station.queryAiEngineStatus();
+    if (!mounted) return;
+    setState(() => _aiStatusSnapshot = snap);
+  }
+
+  Future<void> _runAiSelfTest() async {
+    if (_testingAi) return;
+    setState(() {
+      _testingAi = true;
+      _aiSelfTestReply = null;
+    });
+    try {
+      final handler = VrDesktopBeaconStation.defaultAiInferenceHandler;
+      if (handler == null) {
+        if (mounted) {
+          setState(() => _aiSelfTestReply = 'Motor IA local no registrado.');
+        }
+        return;
+      }
+      final res = await _station.mediaVault.onAiInferenceApi?.call({
+        'prompt': 'Preséntate brevemente como Estación Faro 3D lista para VR.',
+        'maxTokens': 96,
+      });
+      if (!mounted) return;
+      final txt = (res?['text'] as String?)?.trim();
+      setState(() {
+        _aiSelfTestReply = (txt != null && txt.isNotEmpty)
+            ? txt
+            : 'Sin respuesta del motor local.';
+      });
+      await _refreshAiStatus();
+    } finally {
+      if (mounted) setState(() => _testingAi = false);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     unawaited(_station.start(enableWebcam: widget.autoEnableWebcam));
+    unawaited(_refreshAiStatus());
   }
 
   @override
@@ -219,6 +260,8 @@ class _VrDesktopBeaconPageState extends State<VrDesktopBeaconPage> {
                         ],
                         const SizedBox(height: 14),
                         _buildHandsFreeVoiceAndFaceCard(sol, connected),
+                        const SizedBox(height: 14),
+                        _buildFaroAiBrainCard(),
                         const SizedBox(height: 14),
                         _buildMediaVaultCard(connected),
                       ],
@@ -1367,6 +1410,174 @@ class _VrDesktopBeaconPageState extends State<VrDesktopBeaconPage> {
         ),
       );
     }
+  }
+
+  Widget _buildFaroAiBrainCard() {
+    final snap = _aiStatusSnapshot;
+    final available = _station.hasAiInferenceHandler;
+    final engine =
+        _station.lastAiEngine ??
+        (snap?['activeEngine'] as String?) ??
+        (available ? 'SAIA Faro listo (Ollama / GGUF / Micro)' : 'No registrado');
+    final models = (snap?['models'] is List)
+        ? (snap!['models'] as List).whereType<String>().take(4).toList()
+        : const <String>[];
+    final ramGb = snap?['ramGb'];
+
+    return Card(
+      key: const Key('faro_ai_brain_card'),
+      color: const Color(0xFF0E1729),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: available
+              ? const Color(0xFF7C4DFF).withValues(alpha: 0.48)
+              : Colors.white12,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.psychology_alt_rounded,
+                  color: Color(0xFFB388FF),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Cerebro IA Faro (3D) · Inferencia LAN Privada',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: available
+                        ? const Color(0xFF7C4DFF).withValues(alpha: 0.20)
+                        : Colors.white10,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: available
+                          ? const Color(0xFFB388FF)
+                          : Colors.white24,
+                    ),
+                  ),
+                  child: Text(
+                    available
+                        ? '${_station.aiRequestsServed} turnos · ${_station.lastAiLatencyMs} ms'
+                        : 'Inactivo',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: available
+                          ? const Color(0xFFD1C4E9)
+                          : Colors.white54,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Motor activo: $engine'
+              '${ramGb != null ? " · RAM equipo: $ramGb GB" : ""}',
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+            if (models.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final m in models)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Text(
+                        m,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: Color(0xFF00E5FF),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('faro_ai_test_button'),
+                  onPressed: available && !_testingAi ? _runAiSelfTest : null,
+                  icon: Icon(
+                    _testingAi
+                        ? Icons.hourglass_top_rounded
+                        : Icons.bolt_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _testingAi ? 'Probando IA…' : 'Probar inferencia local',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _refreshAiStatus,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text(
+                    'Actualizar modelos',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                ),
+              ],
+            ),
+            if (_aiSelfTestReply != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF090F1E),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF7C4DFF).withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  _aiSelfTestReply!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white,
+                    height: 1.32,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildMediaVaultCard(bool connected) {

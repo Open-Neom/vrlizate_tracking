@@ -369,6 +369,7 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
     this.onVoiceCommandApi,
     this.onSimulateExpressionApi,
     this.onAiInferenceApi,
+    this.onAiStatusApi,
   }) : _vaultToken = _generateCapabilityToken();
 
   final String stationId;
@@ -385,6 +386,7 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
   onSimulateExpressionApi;
   final Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
   onAiInferenceApi;
+  final Future<Map<String, Object?>> Function()? onAiStatusApi;
 
   HttpServer? _server;
   StreamSubscription<HttpRequest>? _sub;
@@ -1010,6 +1012,32 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
 
       if (sub.length == 2 &&
           sub[0] == 'api' &&
+          sub[1] == 'ai-status' &&
+          request.method == 'GET') {
+        if (onAiStatusApi == null) {
+          _sendJson(response, {
+            'ok': onAiInferenceApi != null,
+            'available': onAiInferenceApi != null,
+          });
+          return;
+        }
+        try {
+          final status = await onAiStatusApi!().timeout(
+            const Duration(seconds: 3),
+          );
+          _sendJson(response, status);
+        } catch (_) {
+          _sendJson(
+            response,
+            {'ok': false, 'error': 'ai_status_failed'},
+            status: HttpStatus.internalServerError,
+          );
+        }
+        return;
+      }
+
+      if (sub.length == 2 &&
+          sub[0] == 'api' &&
           sub[1] == 'ai-infer' &&
           request.method == 'POST') {
         if (onAiInferenceApi == null) {
@@ -1022,10 +1050,10 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
         }
         final rawBody = await utf8.decoder
             .bind(request)
-            .take(64)
+            .take(512)
             .join()
-            .timeout(const Duration(seconds: 3), onTimeout: () => '');
-        if (rawBody.trim().isEmpty || rawBody.length > 32768) {
+            .timeout(const Duration(seconds: 4), onTimeout: () => '');
+        if (rawBody.trim().isEmpty || rawBody.length > 327680) {
           _sendJson(
             response,
             {'ok': false, 'error': 'invalid_ai_payload'},

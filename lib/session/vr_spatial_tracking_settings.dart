@@ -80,11 +80,16 @@ class VrSpatialTrackingSettingsButton extends StatelessWidget {
 }
 
 class VrSpatialTrackingSettingsPage extends StatelessWidget {
+  /// Optional host-supplied settings card builder (e.g. embedded SAIA brain
+  /// status, `.gguf` selector & RAM eviction controls in Open Neom hosts).
+  static WidgetBuilder? extraSettingsCardBuilder;
+
   const VrSpatialTrackingSettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final service = VrSpatialSettingsScope.maybeOf(context);
+    final extraCard = extraSettingsCardBuilder;
     return Scaffold(
       appBar: AppBar(title: const Text('Cámaras y sensado del visor')),
       body: service == null
@@ -95,6 +100,10 @@ class VrSpatialTrackingSettingsPage extends StatelessWidget {
                 VrTriCameraLiveInspectorCard(service: service),
                 const SizedBox(height: 16),
                 _DesktopBeaconSettingsCard(service: service),
+                if (extraCard != null) ...[
+                  const SizedBox(height: 16),
+                  extraCard(context),
+                ],
                 const SizedBox(height: 18),
                 SwitchListTile.adaptive(
                   key: const ValueKey('spatial_tracking_switch'),

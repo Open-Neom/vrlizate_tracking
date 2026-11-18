@@ -29,6 +29,10 @@ class VrDesktopBeaconStation extends ChangeNotifier {
   static Future<Map<String, Object?>> Function(Map<String, Object?> payload)?
   defaultAiInferenceHandler;
 
+  /// Optional host-registered status probe reporting active local Ollama/GGUF
+  /// engines and models for the Faro desktop dashboard (`GET /api/ai-status`).
+  static Future<Map<String, Object?>> Function()? defaultAiStatusProvider;
+
   VrDesktopBeaconStation({
     VrDesktopVisionPlatform? visionPlatform,
     VrDesktopVoicePlatform? voicePlatform,
@@ -142,9 +146,36 @@ class VrDesktopBeaconStation extends ChangeNotifier {
       if (handler == null) {
         return {'ok': false, 'error': 'ai_handler_not_registered'};
       }
-      return handler(payload);
+      final sw = Stopwatch()..start();
+      try {
+        final result = await handler(payload);
+        sw.stop();
+        _aiRequestsServed++;
+        _lastAiLatencyMs = sw.elapsedMilliseconds;
+        final eng = result['engine'];
+        if (eng is String && eng.trim().isNotEmpty) {
+          _lastAiEngine = eng.trim();
+        }
+        _lastAiError = result['ok'] == true
+            ? null
+            : ((result['error'] as String?) ?? 'error');
+        if (!_disposed) notifyListeners();
+        return result;
+      } catch (e) {
+        sw.stop();
+        _lastAiLatencyMs = sw.elapsedMilliseconds;
+        _lastAiError = 'inference_exception';
+        if (!_disposed) notifyListeners();
+        rethrow;
+      }
     },
+    onAiStatusApi: queryAiEngineStatus,
   );
+
+  int _aiRequestsServed = 0;
+  int _lastAiLatencyMs = 0;
+  String? _lastAiEngine;
+  String? _lastAiError;
 
   RawDatagramSocket? _dataSocket;
   RawDatagramSocket? _discoverySocket;
@@ -254,6 +285,29 @@ class VrDesktopBeaconStation extends ChangeNotifier {
   VrDesktopCapabilities? get desktopCapabilities => _desktopCapabilities;
   bool get hasAiInferenceHandler =>
       (_aiInferenceHandler ?? defaultAiInferenceHandler) != null;
+  int get aiRequestsServed => _aiRequestsServed;
+  int get lastAiLatencyMs => _lastAiLatencyMs;
+  String? get lastAiEngine => _lastAiEngine;
+  String? get lastAiError => _lastAiError;
+
+  Future<Map<String, Object?>> queryAiEngineStatus() async {
+    final provider = defaultAiStatusProvider;
+    final base = <String, Object?>{
+      'ok': hasAiInferenceHandler,
+      'available': hasAiInferenceHandler,
+      'requestsServed': _aiRequestsServed,
+      'lastLatencyMs': _lastAiLatencyMs,
+      if (_lastAiEngine != null) 'lastEngine': _lastAiEngine,
+      if (_lastAiError != null) 'lastError': _lastAiError,
+    };
+    if (provider == null) return base;
+    try {
+      final extra = await provider();
+      return <String, Object?>{...base, ...extra};
+    } catch (_) {
+      return base;
+    }
+  }
   VrTriDeviceExecutionPlan? get latestExecutionPlan =>
       autonomousBridge.latestExecutionPlan;
   int? get boundPort => _dataSocket?.port;
