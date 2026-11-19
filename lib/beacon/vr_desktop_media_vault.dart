@@ -32,7 +32,11 @@ enum VrVaultMediaKind {
   webVrProject,
 
   /// Local `.glb` / `.gltf` 3D object projected in holographic stereo.
-  glbHologram;
+  glbHologram,
+
+  /// Local `.pdf` document streamed progressively via HTTP 206 Byte-Range for
+  /// `1D`/`2D`/`3D` stereoscopic VR reading with 6-DoF lean-in & SAIA support.
+  pdfDocument;
 
   String get labelEs => switch (this) {
     VrVaultMediaKind.holographic3dWeb => 'Holograma Web 3D-VR (Doble Ojo)',
@@ -41,6 +45,7 @@ enum VrVaultMediaKind {
     VrVaultMediaKind.vrlzPackage => 'Cartucho .vrlz (LAN / Pin 2D-VR)',
     VrVaultMediaKind.webVrProject => 'Proyecto WebVR Libre (PC Local)',
     VrVaultMediaKind.glbHologram => 'Objeto 3D .glb Holográfico',
+    VrVaultMediaKind.pdfDocument => 'Documento PDF (Lectura 3D-VR / HTTP 206)',
   };
 
   static VrVaultMediaKind fromWire(String? raw) =>
@@ -685,6 +690,22 @@ class VrDesktopMediaVaultServer extends ChangeNotifier {
         mimeType: lower.endsWith('.glb')
             ? 'model/gltf-binary'
             : 'model/gltf+json',
+      );
+    } else if (lower.endsWith('.pdf')) {
+      record = _VaultStoredRecord(
+        id: 'pdf_$idSlug',
+        title: title ?? stem,
+        description:
+            description ??
+            'Documento PDF alojado en PC · lectura progresiva HTTP 206 Range en Sala de Lectura VR 1D/2D/3D.',
+        kind: VrVaultMediaKind.pdfDocument,
+        stereoFormat: VrVaultStereoFormat.cinemaFlatIn3dRoom,
+        requiredTier: VrEcosystemDeviceTier.twoDevices2dVr,
+        sizeBytes: stat.size,
+        etag: strongEtag,
+        filePath: file.path,
+        mimeType: 'application/pdf',
+        canPinForTwoDevices2dVr: true,
       );
     }
 
@@ -1690,6 +1711,7 @@ requestAnimationFrame(loop);
     if (lower.endsWith('.mp3')) return 'audio/mpeg';
     if (lower.endsWith('.ogg')) return 'audio/ogg';
     if (lower.endsWith('.mp4')) return 'video/mp4';
+    if (lower.endsWith('.pdf')) return 'application/pdf';
     return 'application/octet-stream';
   }
 

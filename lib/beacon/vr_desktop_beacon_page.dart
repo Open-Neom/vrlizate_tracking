@@ -1734,6 +1734,8 @@ class _VrDesktopBeaconPageState extends State<VrDesktopBeaconPage> {
                         VrVaultMediaKind.vrlwWorld => Icons.public_rounded,
                         VrVaultMediaKind.vrlzPackage =>
                           Icons.videogame_asset_rounded,
+                        VrVaultMediaKind.pdfDocument =>
+                          Icons.picture_as_pdf_rounded,
                         _ => Icons.view_in_ar_rounded,
                       },
                       size: 18,
